@@ -37,7 +37,15 @@ class SaleOrder(orm.Model):
 
     _inherit = 'sale.order'
     _auto = True
-
+    
+    def copy(self, cr, uid, id, default=None, context=None, done_list=None, local=False):
+        default = {} if default is None else default.copy()
+        drivers = []
+        for driver in self.browse(cr, uid, id, context=context).drivers_order_ids:
+            drivers.append(driver.id)
+        default['drivers_order_ids'] = [(6, 0, drivers)]
+        return super(SaleOrder, self).copy(cr, uid, id, default, context=context)
+    
     def fill_sale_order(self, cr, uid, ids, context=None):
         """Pass the order id to a wizard to retrieve a list of
         product categories for setting a default list of products."""
