@@ -30,6 +30,8 @@ class DriversOrderLines(orm.Model):
         'quantity_hand': fields.related('product_id', 'qty_available',
                                         type='float',
                                         string='Quantity on Hand'),
+        
+        
         'driver_1': fields.float('Driver 1', digits=(16, 2)),
         'driver_2': fields.float('Driver 2', digits=(16, 2)),
         'driver_3': fields.float('Driver 3', digits=(16, 2)),
@@ -47,6 +49,7 @@ class DriversOrderLines(orm.Model):
         'driver_15': fields.float('Driver 15', digits=(16, 2)),
         'date_order': fields.date('Date', required=True, readonly=True,
                                   select=True),
+        'procurement_ids': fields.one2many('procurement.order', 'driver_line_id', 'Procurements'),
     }
 
     def create(self, cr, uid, values, context=None):
@@ -68,8 +71,25 @@ class DriversOrderLines(orm.Model):
     _defaults = {
         'date_order': fields.date.context_today,
     }
+    
+    def need_procurement(self, cr, uid, ids, context=None):
+        #when sale is installed only, there is no need to create procurements, that's only
+        #further installed modules (sale_service, sale_stock) that will change this.
+        prod_obj = self.pool.get('product.product')
+        for line in self.browse(cr, uid, ids, context=context):
+            if prod_obj.need_procurement(cr, uid, [line.product_id.id], context=context):
+                return True
+        return False
 
 DriversOrderLines()
+
+
+
+class procurement_order(orm.Model):
+    _inherit = 'procurement.order'
+    _columns = {
+        'driver_line_id': fields.many2one('drivers.order.line', string='Driver Order Line'),
+    }
 
 
 class OrderLine(orm.Model):

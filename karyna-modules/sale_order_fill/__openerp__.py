@@ -23,6 +23,6 @@
 		'stock',
 		'mrp',
 		'sale_stock',
-		'salesagent_commissions'
+		'salesagent_commissions','mrp_production_validation'
     ]
 }

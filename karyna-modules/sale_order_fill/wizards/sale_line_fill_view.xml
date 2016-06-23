@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <openerp>
     <data>
-
+ 
         <record model="ir.actions.act_window" id="sale_line_fill_act">
             <field name="name">Fill Sale Products</field>
             <field name="res_model">sale.order.fill</field>
@@ -12,19 +12,19 @@
             <field name="key2">client_action_multi</field>
             <field name="src_model">sale.order.fill</field>
         </record>
-
+ 
         <record model="ir.ui.view" id="sale_order_fill_view">
             <field name="name">sale.order.fill.view</field>
             <field name="model">sale.order.fill</field>
             <field name="arch" type="xml">
-                <form version="7.0" string="Fill by Product Category">
-                    <group string="Add Categories to Populate">
-                        <field name="category_ids" widget="many2many_tags"/>
+                <form string="Fill Product">
+                    <group string="Add Products to Populate">
+                        <field name="product_ids" nolabel="1"/>
                     </group>
                     <button name="fill_sale_order" string="Fill Products" type="object"/>
                 </form>
             </field>
         </record>
-
+ 
     </data>
 </openerp>

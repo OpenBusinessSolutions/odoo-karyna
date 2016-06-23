@@ -10,7 +10,7 @@
                     <button name="fill_sale_order" string="Fill Products"
                         type="object" states="draft,progress" class="oe_highlight"/>
                 </xpath>
-                <xpath expr="/form/notebook/page/field/tree/field[@name='product_uom_qty']" position="after">
+                <xpath expr="/form/sheet/notebook/page[@string='Order Lines']/field[@name='order_line']/tree/field[@name='product_uom_qty']" position="after">
                     <field string="Sacks Quantity" name="sacks_quantity" sum="Total"/>
                     <field name="product_qty_available"/>
                 </xpath>
