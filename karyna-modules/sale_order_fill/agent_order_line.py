@@ -5,33 +5,47 @@ import logging
 
 class DriversOrderLines(orm.Model):
     """Class description""" 
-    
-    _name = 'drivers.order.line'
 
-    def onchange_total(self, cr, uid, ids, context=None, *args):
+    _name = 'drivers.order.line'
+    
+#     def copy(self, cr, uid, id, default=None, context=None, done_list=None, local=False):
+#         default = {} if default is None else default.copy()
+#         driver_dict = {}
+#         for i in range(1,16):
+#             default['driver_'+str(i)] = 0.0
+#         print "ddddddddddddd",driver_dict
+#         return super(DriversOrderLines, self).copy(cr, uid, id, default, context=context)
+          
+    def onchange_driver(self, cr, uid, ids, context=None, *args):
         """Calculate the total cost of quantity per driver."""
+
         line_obj = self.pool.get('sale.order.line')
         res = {}
         for order in self.browse(cr, uid, ids, context):
+            #import pdb; pdb.set_trace()
             total = 0
+            sack_amt = 0
             for driver in args:
                 total += driver
-            res['value'] = {'order_total': total}
-            line_obj.write(cr, uid, order.line_id.id, {'product_uom_qty': total,
+                if order.yield_sack:
+                    sack_amt = (total / order.yield_sack)
+            res['value'] = {'order_total': total, 'sacks_quantity': sack_amt }
+            line_obj.write(cr, uid, order.line_id.id, {'product_uom_qty': order.order_total,
                            }, context)
+
         return res
 
     _columns = {
         'line_id': fields.many2one('sale.order.line', 'Order Line'),
         'picking_id': fields.many2one('stock.move', 'Stock Move'),
         'product_id': fields.many2one('product.template', 'Product'),
-        'order_total': fields.float('Order Total', digits=(16, 2)),
+        'order_total': fields.float('Order Total', digits=(16, 2), readonly=False),
+        'sacks_quantity': fields.float('Sac', readonly=False),
+        'yield_sack': fields.float('Rend / Sac', readonly=True),
         'sale_order': fields.many2one('sale.order', 'Order'),
         'quantity_hand': fields.related('product_id', 'qty_available',
                                         type='float',
                                         string='Quantity on Hand'),
-        
-        
         'driver_1': fields.float('Driver 1', digits=(16, 2)),
         'driver_2': fields.float('Driver 2', digits=(16, 2)),
         'driver_3': fields.float('Driver 3', digits=(16, 2)),
@@ -177,10 +191,6 @@ class OrderLine(orm.Model):
             return res
 
     _columns = {
-        'salesagent_ids': fields.one2many('salesagent.order.line', 'line_id',
-                                          'Sales Agent'),
-        #'drivers_order_lines_ids': fields.one2many('drivers.order.line', 'line_id',
-        #                                  'Drivers Order Line'),
         'sacks_quantity': fields.function(sack_yield, type='float',
                                           store=True, readonly=False),
         'suggested_quantity': fields.float('Suggested Quantity',

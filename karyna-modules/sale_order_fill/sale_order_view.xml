@@ -10,11 +10,24 @@
                     <button name="fill_sale_order" string="Fill Products"
                         type="object" states="draft,progress" class="oe_highlight"/>
                 </xpath>
-                <xpath expr="/form/sheet/notebook/page[@string='Order Lines']/field[@name='order_line']/tree/field[@name='product_uom_qty']" position="after">
+                 <xpath expr="/form/sheet/notebook/page[@string='Order Lines']/field[@name='order_line']/tree/field[@name='product_uom_qty']" position="after">
+                
                     <field string="Sacks Quantity" name="sacks_quantity" sum="Total"/>
                     <field name="product_qty_available"/>
                 </xpath>
             </field>
         </record>
+        
+       <record model="ir.ui.view" id="view_res_partner_inherit_driver_form">
+            <field name="name">view.res.partner.inherit.driver.form</field>
+            <field name="model">res.partner</field>
+            <field name="inherit_id" ref="base.view_partner_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//page[@name='sales_purchases']//field[@name='supplier']" position="after">
+                    <field name='driver'/>
+                </xpath>
+            </field>
+        </record>
+        
     </data>
 </openerp>

@@ -42,6 +42,7 @@ class SaleOrderFill(osv.osv_memory):
                 }
             drivers_order_line_values = {
                 'product_id': prod.id,
+                'yield_sack': prod.yield_sack,
                 'sale_order': context.get('active_id', False),
                 }
             sale_order_line_pool.create(cr, uid,sale_order_line_values, context=context)

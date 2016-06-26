@@ -14,7 +14,6 @@
 		'salesagent_order_line_view.xml',
 		'mrp_view.xml',
 		'mrp_bom_view.xml',
-		'stock_picking_view.xml'
     ],
     'auto': False,
     'depends': [
@@ -23,6 +22,6 @@
 		'stock',
 		'mrp',
 		'sale_stock',
-		'salesagent_commissions','mrp_production_validation'
+		#'salesagent_commissions'
     ]
 }

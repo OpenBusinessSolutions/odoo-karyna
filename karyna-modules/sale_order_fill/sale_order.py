@@ -6,6 +6,20 @@ from datetime import datetime, timedelta
 import time
 from openerp.tools import DEFAULT_SERVER_DATE_FORMAT, DEFAULT_SERVER_DATETIME_FORMAT
 
+class res_partner(orm.Model):
+    _inherit = 'res.partner'
+    
+    _columns = {
+         'driver': fields.selection([('driver1','Driver 1'),('driver2','Driver 2'),
+                                     ('driver3','Driver 3'),('driver4','Driver 4'),
+                                     ('driver5','Driver 5'),('driver6','Driver 6'),
+                                     ('driver7','Driver 7'),('driver8','Driver 8'),
+                                     ('driver9','Driver 9'),('driver10','Driver 10'),
+                                     ('driver11','Driver 11'),('driver12','Driver 12'),
+                                     ('driver13','Driver 13'),('driver14','Driver 14'),
+                                     ('driver15','Driver 15')],'Driver'),
+    }
+    
 class stock_move(orm.Model):
     _inherit = 'stock.move'
     
@@ -40,9 +54,17 @@ class SaleOrder(orm.Model):
     
     def copy(self, cr, uid, id, default=None, context=None, done_list=None, local=False):
         default = {} if default is None else default.copy()
+        driver_obj = self.pool.get('drivers.order.line')
         drivers = []
+        driver_dict = {}
+        for i in range(1,16):
+            driver_dict.update({'driver_'+str(i):0.0})
+        driver_dict['procurement_ids'] = [(6, 0, [])]
+        driver_dict['order_total'] = 0.0
         for driver in self.browse(cr, uid, id, context=context).drivers_order_ids:
+            driver_obj.write(cr, uid, driver.id, driver_dict)
             drivers.append(driver.id)
+    
         default['drivers_order_ids'] = [(6, 0, drivers)]
         return super(SaleOrder, self).copy(cr, uid, id, default, context=context)
     
@@ -97,6 +119,7 @@ class SaleOrder(orm.Model):
                 'driver_line_id':line.id
                 
             }
+        return {}
         
     def action_ship_create(self, cr, uid, ids, context=None):
         """Create the required procurements to supply sales order lines, also connecting
@@ -106,18 +129,11 @@ class SaleOrder(orm.Model):
         :return: True
         """
         context = dict(context or {})
-        list_drivers = {}
-        for i in range(1,16):
-            name = 'Driver'+str(i)
-            driver = self.pool.get('res.partner').search(cr,uid,[('name','=',name)])
-            if driver:
-                list_drivers.update({'driver'+str(i):driver})
-        if len(list_drivers.keys()) < 15:
-            raise osv.except_osv(_('Warning!'), _('Please create 15 Drivers in the system !.'))
         context['lang'] = self.pool['res.users'].browse(cr, uid, uid).lang
         procurement_obj = self.pool.get('procurement.order')
         sale_line_obj = self.pool.get('sale.order.line')
         driver_line_obj = self.pool.get('drivers.order.line')
+        driver_obj = self.pool.get('res.partner')
         for order in self.browse(cr, uid, ids, context=context):
             proc_ids = []
             vals = self._prepare_procurement_group(cr, uid, order, context=context)
@@ -142,8 +158,12 @@ class SaleOrder(orm.Model):
                     ctx = context.copy()
                     for i in range(1,16):
                         proc_id = False
-                        ctx['driver'] = list_drivers.get('driver'+str(i)) and list_drivers.get('driver'+str(i))[0]
                         if eval('line.driver_'+str(i)) > 0:
+                            driver = driver_obj.search(cr, uid, [('driver','=','driver'+str(i))])
+                            if not driver:
+                                raise osv.except_osv(_('Warning!'), _('Please define a partner as %s before confirming the order.'%('driver'+str(i))))
+                        
+                            ctx['driver'] = driver[0]
                             ctx['qty'] = eval('line.driver_'+str(i))
                             vals = self._prepare_order_line_procurement(cr, uid, order, line, group_id=order.procurement_group_id.id, context=ctx)
                             ctx['procurement_autorun_defer'] = True
