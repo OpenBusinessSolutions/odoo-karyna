@@ -42,9 +42,31 @@ class stock_move(orm.Model):
         (and company). Those attributes are also given as parameters.
         """
         pick_obj = self.pool.get("stock.picking")
-        move = self.browse(cr, uid, move_ids, context=context)[0]
-        values = self._prepare_picking_assign(cr, uid, move, context=context)
-        pick = pick_obj.create(cr, uid, values, context=context)
+        drivers = map(lambda x:x.partner_id.id, self.browse(cr, uid, move_ids, context=context))
+        # Use a SQL query as doing with the ORM will split it in different queries with id IN (,,)
+        # In the next version, the locations on the picking should be stored again.
+        query = """
+            SELECT stock_picking.id FROM stock_picking, stock_move
+            WHERE
+                stock_picking.state in ('draft', 'confirmed', 'waiting') AND
+                stock_move.picking_id = stock_picking.id AND
+                stock_move.location_id = %s AND
+                stock_move.location_dest_id = %s AND
+                stock_move.partner_id in %s AND
+        """
+        params = (location_from, location_to, (tuple(drivers),))
+        if not procurement_group:
+            query += "stock_picking.group_id IS NULL LIMIT 1"
+        else:
+            query += "stock_picking.group_id = %s LIMIT 1"
+            params += (procurement_group,)
+        cr.execute(query, params)
+        [pick] = cr.fetchone() or [None]
+        if not pick:
+            #pick_obj = self.pool.get("stock.picking")
+            move = self.browse(cr, uid, move_ids, context=context)[0]
+            values = self._prepare_picking_assign(cr, uid, move, context=context)
+            pick = pick_obj.create(cr, uid, values, context=context)
         return self.write(cr, uid, move_ids, {'picking_id': pick}, context=context)
         
 class SaleOrder(orm.Model):
@@ -169,7 +191,7 @@ class SaleOrder(orm.Model):
                             ctx['procurement_autorun_defer'] = True
                             self.pool.get("procurement.group").write(cr, uid, group_id, {'partner_id':ctx['driver']}, context=context)
                             proc_id = procurement_obj.create(cr, uid, vals, context=ctx)
-                            procurement_obj.run(cr, uid, proc_id, context=ctx)
+                            procurement_obj.run(cr, uid, [proc_id], context=ctx)
                         self.pool.get("procurement.group").write(cr, uid, group_id, {'partner_id': order.partner_shipping_id.id}, context=context)
                         
             if order.state == 'shipping_except':
