@@ -23,38 +23,36 @@ class res_partner(orm.Model):
 class stock_move(orm.Model):
     _inherit = 'stock.move'
     
-    def _prepare_picking_assign(self, cr, uid, move, context=None):
-        """ Prepares a new picking for this move as it could not be assigned to
-        another picking. This method is designed to be inherited.
-        """
-        values = {
-            'origin': move.origin,
-            'company_id': move.company_id and move.company_id.id or False,
-            'move_type': move.group_id and move.group_id.move_type or 'direct',
-            'partner_id': move.partner_id.id or False,
-            'picking_type_id': move.picking_type_id and move.picking_type_id.id or False,
-            }
-        return values
-    
     @api.cr_uid_ids_context
     def _picking_assign(self, cr, uid, move_ids, procurement_group, location_from, location_to, context=None):
         """Assign a picking on the given move_ids, which is a list of move supposed to share the same procurement_group, location_from and location_to
         (and company). Those attributes are also given as parameters.
         """
         pick_obj = self.pool.get("stock.picking")
-        drivers = map(lambda x:x.partner_id.id, self.browse(cr, uid, move_ids, context=context))
-        # Use a SQL query as doing with the ORM will split it in different queries with id IN (,,)
-        # In the next version, the locations on the picking should be stored again.
-        query = """
-            SELECT stock_picking.id FROM stock_picking, stock_move
+        if context.get('driver'):
+            drivers = map(lambda x:x.partner_id.id, self.browse(cr, uid, move_ids, context=context))
+            # Use a SQL query as doing with the ORM will split it in different queries with id IN (,,)
+            # In the next version, the locations on the picking should be stored again.
+            query = """
+                SELECT stock_picking.id FROM stock_picking, stock_move
+                WHERE
+                    stock_picking.state in ('draft', 'confirmed', 'waiting') AND
+                    stock_move.picking_id = stock_picking.id AND
+                    stock_move.location_id = %s AND
+                    stock_move.location_dest_id = %s AND
+                    stock_move.partner_id in %s AND
+            """
+            params = (location_from, location_to, (tuple(drivers),))
+        else:
+            query = """
+                SELECT stock_picking.id FROM stock_picking, stock_move
             WHERE
                 stock_picking.state in ('draft', 'confirmed', 'waiting') AND
                 stock_move.picking_id = stock_picking.id AND
                 stock_move.location_id = %s AND
                 stock_move.location_dest_id = %s AND
-                stock_move.partner_id in %s AND
-        """
-        params = (location_from, location_to, (tuple(drivers),))
+                """
+            params = (location_from, location_to)
         if not procurement_group:
             query += "stock_picking.group_id IS NULL LIMIT 1"
         else:
@@ -141,7 +139,26 @@ class SaleOrder(orm.Model):
                 'driver_line_id':line.id
                 
             }
-        return {}
+        else:
+            date_planned = self._get_date_planned(cr, uid, order, line, order.date_order, context=context)
+            return {
+                'name': line.name,
+                'origin': order.name,
+                'route_ids' : line.route_id and [(4, line.route_id.id)] or [],
+                'date_planned': date_planned,
+                'warehouse_id' :order.warehouse_id and order.warehouse_id.id or False,
+                'partner_dest_id': order.partner_shipping_id.id,
+                'location_id': location_id,
+                'product_id': line.product_id.id,
+                'product_qty': line.product_uom_qty,
+                'product_uom': line.product_uom.id,
+                'product_uos_qty': (line.product_uos and line.product_uos_qty) or line.product_uom_qty,
+                'product_uos': (line.product_uos and line.product_uos.id) or line.product_uom.id,
+                'company_id': order.company_id.id,
+                'group_id': group_id,
+                'invoice_state': (order.order_policy == 'picking') and '2binvoiced' or 'none',
+                'sale_line_id': line.id
+                    }
         
     def action_ship_create(self, cr, uid, ids, context=None):
         """Create the required procurements to supply sales order lines, also connecting
@@ -156,44 +173,74 @@ class SaleOrder(orm.Model):
         sale_line_obj = self.pool.get('sale.order.line')
         driver_line_obj = self.pool.get('drivers.order.line')
         driver_obj = self.pool.get('res.partner')
+        test_drivers = False
         for order in self.browse(cr, uid, ids, context=context):
             proc_ids = []
             vals = self._prepare_procurement_group(cr, uid, order, context=context)
             if not order.procurement_group_id:
                 group_id = self.pool.get("procurement.group").create(cr, uid, vals, context=context)
                 order.write({'procurement_group_id': group_id})
-
             for line in order.drivers_order_ids:
-                
-                #Try to fix exception procurement (possible when after a shipping exception the user choose to recreate)
-                if line.procurement_ids:
-                    #first check them to see if they are in exception or not (one of the related moves is cancelled)
-                    procurement_obj.check(cr, uid, [x.id for x in line.procurement_ids if x.state not in ['cancel', 'done']])
-                    line.refresh()
-                    #run again procurement that are in exception in order to trigger another move
-                    except_proc_ids = [x.id for x in line.procurement_ids if x.state in ('exception', 'cancel')]
-                    procurement_obj.reset_to_confirmed(cr, uid, except_proc_ids, context=context)
-                    proc_ids += except_proc_ids
-                else:
-                    if not line.product_id:
+                for i in range(1,16):
+                    if eval('line.driver_'+str(i)) > 0:
+                        test_drivers = True
+                        break
+                if test_drivers:break
+            if test_drivers:
+                for line in order.drivers_order_ids:
+                    
+                    #Try to fix exception procurement (possible when after a shipping exception the user choose to recreate)
+                    if line.procurement_ids:
+                        #first check them to see if they are in exception or not (one of the related moves is cancelled)
+                        procurement_obj.check(cr, uid, [x.id for x in line.procurement_ids if x.state not in ['cancel', 'done']])
+                        line.refresh()
+                        #run again procurement that are in exception in order to trigger another move
+                        except_proc_ids = [x.id for x in line.procurement_ids if x.state in ('exception', 'cancel')]
+                        procurement_obj.reset_to_confirmed(cr, uid, except_proc_ids, context=context)
+                        proc_ids += except_proc_ids
+                    else:
+                        if not line.product_id:
+                            continue
+                        ctx = context.copy()
+                        for i in range(1,16):
+                            proc_id = False
+                            if eval('line.driver_'+str(i)) > 0:
+                                driver = driver_obj.search(cr, uid, [('driver','=','driver'+str(i))])
+                                if not driver:
+                                    raise osv.except_osv(_('Warning!'), _('Please define a partner as %s before confirming the order.'%('driver'+str(i))))
+                            
+                                ctx['driver'] = driver[0]
+                                ctx['qty'] = eval('line.driver_'+str(i))
+                                vals = self._prepare_order_line_procurement(cr, uid, order, line, group_id=order.procurement_group_id.id, context=ctx)
+                                ctx['procurement_autorun_defer'] = True
+                                self.pool.get("procurement.group").write(cr, uid, group_id, {'partner_id':ctx['driver']}, context=context)
+                                proc_id = procurement_obj.create(cr, uid, vals, context=ctx)
+                                procurement_obj.run(cr, uid, [proc_id], context=ctx)
+                            self.pool.get("procurement.group").write(cr, uid, group_id, {'partner_id': order.partner_shipping_id.id}, context=context)
+            else:
+                for line in order.order_line:
+                    if line.state == 'cancel':
                         continue
-                    ctx = context.copy()
-                    for i in range(1,16):
-                        proc_id = False
-                        if eval('line.driver_'+str(i)) > 0:
-                            driver = driver_obj.search(cr, uid, [('driver','=','driver'+str(i))])
-                            if not driver:
-                                raise osv.except_osv(_('Warning!'), _('Please define a partner as %s before confirming the order.'%('driver'+str(i))))
-                        
-                            ctx['driver'] = driver[0]
-                            ctx['qty'] = eval('line.driver_'+str(i))
-                            vals = self._prepare_order_line_procurement(cr, uid, order, line, group_id=order.procurement_group_id.id, context=ctx)
-                            ctx['procurement_autorun_defer'] = True
-                            self.pool.get("procurement.group").write(cr, uid, group_id, {'partner_id':ctx['driver']}, context=context)
-                            proc_id = procurement_obj.create(cr, uid, vals, context=ctx)
-                            procurement_obj.run(cr, uid, [proc_id], context=ctx)
-                        self.pool.get("procurement.group").write(cr, uid, group_id, {'partner_id': order.partner_shipping_id.id}, context=context)
-                        
+                    #Try to fix exception procurement (possible when after a shipping exception the user choose to recreate)
+                    if line.procurement_ids:
+                        #first check them to see if they are in exception or not (one of the related moves is cancelled)
+                        procurement_obj.check(cr, uid, [x.id for x in line.procurement_ids if x.state not in ['cancel', 'done']])
+                        line.refresh()
+                        #run again procurement that are in exception in order to trigger another move
+                        except_proc_ids = [x.id for x in line.procurement_ids if x.state in ('exception', 'cancel')]
+                        procurement_obj.reset_to_confirmed(cr, uid, except_proc_ids, context=context)
+                        proc_ids += except_proc_ids
+                    elif sale_line_obj.need_procurement(cr, uid, [line.id], context=context):
+                        if (line.state == 'done') or not line.product_id:
+                            continue
+                        vals = self._prepare_order_line_procurement(cr, uid, order, line, group_id=order.procurement_group_id.id, context=context)
+                        ctx = context.copy()
+                        ctx['procurement_autorun_defer'] = True
+                        proc_id = procurement_obj.create(cr, uid, vals, context=ctx)
+                        proc_ids.append(proc_id)
+                #Confirm procurement order such that rules will be applied on it
+                #note that the workflow normally ensure proc_ids isn't an empty list
+                procurement_obj.run(cr, uid, proc_ids, context=context)            
             if order.state == 'shipping_except':
                 val = {'state': 'progress', 'shipped': False}
 
@@ -204,6 +251,7 @@ class SaleOrder(orm.Model):
                             break
                 order.write(val)
         return True
+
 
     def _get_shipped(self, cr, uid, ids, name, args, context=None):
         res = {}
@@ -218,8 +266,12 @@ class SaleOrder(orm.Model):
     def _get_orders_procurements(self, cr, uid, ids, context=None):
         res = set()
         for proc in self.pool.get('procurement.order').browse(cr, uid, ids, context=context):
-            if proc.state =='done' and proc.driver_line_id:
-                res.add(proc.driver_line_id.sale_order.id)
+            if context.get('driver'):
+                if proc.state =='done' and proc.driver_line_id:
+                    res.add(proc.driver_line_id.sale_order.id)
+            else:
+                if proc.state =='done' and proc.sale_line_id:
+                    res.add(proc.sale_line_id.order_id.id)
         return list(res)
     
     _columns = {
